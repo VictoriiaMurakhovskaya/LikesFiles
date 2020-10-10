@@ -3,11 +3,12 @@ import configparser
 import os
 from tkinter import filedialog as fd
 from tkinter import messagebox as mb
-import asyncio
-import aiohttp
-import json
+import threading
+import logging
+from async_writer import write_starter
 
 configname = 'config.cfg'
+mainthread = ''
 
 
 def choose_file(flag):
@@ -20,12 +21,12 @@ def choose_file(flag):
 
 
 def on_closing(w):
-    global files
+    global files,  mainthread
+    logging.info('Ending program')
     config = configparser.ConfigParser()
     config.add_section("Files")
     config.set("Files", "inputfile", files[0].get())
     config.set("Files", "outputdir", files[1].get())
-
     with open('config.cfg', "w") as config_file:
         config.write(config_file)
     w.destroy()
@@ -40,27 +41,7 @@ def on_load():
         files[1].set(config.get("Files", "outputdir"))
 
 
-async def getdata(client, name):
-    req_body = 'http://147.78.65.148:3000/stat?v=' + name
-    async with client.get(req_body) as response:
-        assert response.status == 200
-        return name, await response.text(encoding='utf-8')
-
-
-async def main_loop(endings, filesdict=None):
-    # запросы/запись в асинхронном режиме
-    loop = asyncio.get_running_loop()
-    async with aiohttp.ClientSession(loop=loop) as client:
-        method_list = [getdata(client, item) for item in endings]
-        gathered_tasks = await asyncio.gather(*method_list)
-        for item in gathered_tasks:
-            data = json.loads(item[1])
-            if data:
-                for subitem in ['views', 'likes', 'dislikes']:
-                    filesdict[(item[0], subitem)].write(data[subitem])
-
-
-def launch():
+def launch(files):
     endings = []
     # чтение окончаний url
     with open(files[0].get()) as f:
@@ -72,13 +53,16 @@ def launch():
     for item in endings:
         if not os.path.exists(files[1].get() + '/' + item):
             os.mkdir(files[1].get() + '/' + item)
-    # создание словаря файлов
-    filedict = {}
-    for item in endings:
-        for subitem in ['views', 'likes', 'dislikes']:
-            filedict.update({(item, subitem): open(files[1].get() + '/' + item + '/' + subitem + '.txt', 'w')})
+    write_starter(endings)
 
-    asyncio.run(main_loop(endings, filesdict=filedict))
+
+def thread_launch():
+    global mainthread, files
+    mainthread = threading.Thread(target=launch, args=(files,))
+    mainthread.daemon=True
+    logging.basicConfig(filename='likes.log', filemode='w', format='%(asctime)s - %(message)s', level=logging.INFO)
+    logging.info('Starting main loop')
+    mainthread.start()
 
 
 def ui():
@@ -94,7 +78,7 @@ def ui():
     Button(outframe, text='...', command=lambda x=1: choose_file(x)).pack(side=LEFT, padx=(0, 10))
     inframe.pack(side=TOP, padx=10, pady=10)
     outframe.pack(side=TOP, padx=10, pady=10)
-    Button(window, text='Запустить', command=launch).pack(side=TOP, padx=10, pady=(0, 10))
+    Button(window, text='Запустить', command=thread_launch).pack(side=TOP, padx=10, pady=(0, 10))
     window.protocol("WM_DELETE_WINDOW", lambda f=window: on_closing(f))
     on_load()
     window.mainloop()
