@@ -9,6 +9,7 @@ from async_writer import write_starter
 
 configname = 'config.cfg'
 mainthread = ''
+delay = 0
 
 
 def choose_file(flag):
@@ -21,27 +22,34 @@ def choose_file(flag):
 
 
 def on_closing(w):
-    global files,  mainthread
+    global files,  delay
     logging.info('Ending program')
     config = configparser.ConfigParser()
     config.add_section("Files")
     config.set("Files", "inputfile", files[0].get())
     config.set("Files", "outputdir", files[1].get())
+    config.add_section("Other")
+    config.set('Other', 'delay', str(delay))
     with open('config.cfg', "w") as config_file:
         config.write(config_file)
     w.destroy()
 
 
 def on_load():
-    global files
+    global files, delay
     if os.path.exists('config.cfg'):
         config = configparser.ConfigParser()
         config.read('config.cfg')
         files[0].set(config.get("Files", "inputfile"))
         files[1].set(config.get("Files", "outputdir"))
+        try:
+            delay = int(config.get('Other', 'delay'))
+        except:
+            delay = 0
 
 
 def launch(files):
+    global delay
     endings = []
     # чтение окончаний url
     with open(files[0].get()) as f:
@@ -53,7 +61,7 @@ def launch(files):
     for item in endings:
         if not os.path.exists(files[1].get() + '/' + item):
             os.mkdir(files[1].get() + '/' + item)
-    write_starter(endings)
+    write_starter(endings, files[1].get(), delay)
 
 
 def thread_launch():
